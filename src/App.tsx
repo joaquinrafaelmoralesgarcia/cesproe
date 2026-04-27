@@ -1,17 +1,46 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, Bell, SignalHigh, User, Map as MapIcon, Eye, ShieldCheck, Car as CarIcon, LayoutDashboard, ChevronRight, HelpCircle, ArrowRight, Verified, CheckCircle, Smartphone, Satellite, MapPin, Zap, AlertTriangle, Menu, X, MoreHorizontal, Settings } from 'lucide-react';
+import { Shield, Bell, SignalHigh, User, Map as MapIcon, Eye, ShieldCheck, Car as CarIcon, LayoutDashboard, ChevronRight, HelpCircle, ArrowRight, Verified, CheckCircle, Smartphone, Satellite, MapPin, Zap, AlertTriangle, Menu, X, MoreHorizontal, Settings, Loader2, Mail, Lock } from 'lucide-react';
 import { Screen } from './types';
 import { TIERS, VEHICLES } from './constants';
 import AdminPortal from './AdminPortal';
+import { supabase } from './supabaseClient';
+import { Session } from '@supabase/supabase-js';
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('landing');
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+      if (session && screen === 'landing') {
+        setScreen('dashboard');
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session && screen === 'landing') {
+        setScreen('dashboard');
+      } else if (!session) {
+        setScreen('landing');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [screen]);
 
   const renderScreen = () => {
+    if (loading) return <div className="min-h-screen bg-surface flex items-center justify-center"><Loader2 className="animate-spin text-primary" size={48} /></div>;
+
     switch (screen) {
       case 'landing':
-        return <Landing onNext={() => setScreen('onboarding')} />;
+        return <Landing onNext={() => setScreen('onboarding')} session={session} />;
       case 'onboarding':
         return <Onboarding onComplete={() => setScreen('tier-selection')} />;
       case 'tier-selection':
@@ -98,7 +127,34 @@ function Navbar({ currentScreen, setScreen }: { currentScreen: Screen, setScreen
   );
 }
 
-function Landing({ onNext }: { onNext: () => void }) {
+function Landing({ onNext, session }: { onNext: () => void, session: Session | null }) {
+  const [showAuth, setShowAuth] = useState(false);
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      if (isLogin) {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        alert("Registration successful! You are now logged in.");
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <motion.main 
       initial={{ opacity: 0 }}
@@ -120,29 +176,73 @@ function Landing({ onNext }: { onNext: () => void }) {
           <img src="/logo.png" alt="" className="h-24 md:h-32 object-contain scale-[2] origin-center" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling!.classList.remove('hidden'); }} />
           <span className="hidden text-3xl font-black text-primary tracking-widest uppercase">CESPROE</span>
         </div>
-        <div className="space-y-2 mb-12">
-          <h1 className="text-5xl font-bold text-on-surface">Total Privacy.</h1>
-          <h1 className="text-5xl font-bold text-on-surface-variant/60">Absolute Safety.</h1>
-          <p className="text-lg text-secondary mt-6">
-            Enter the inner circle of global security. Elite protection, managed with clinical precision.
-          </p>
-        </div>
-
-        <div className="w-full space-y-4">
-          <button 
-            onClick={onNext}
-            className="w-full py-4 bg-primary-container text-on-primary-container font-bold rounded-lg shadow-xl shadow-primary-container/20 active:scale-[0.98] transition-transform"
-          >
-            Create Account
-          </button>
-          <button className="w-full py-4 border border-zinc-700 text-zinc-300 font-bold rounded-lg glass-panel hover:bg-white/5 transition-colors">
-            Request Private Demo
-          </button>
-        </div>
         
-        <button className="mt-8 text-primary font-medium hover:underline">
-          Already a member? <span className="font-bold">Login</span>
-        </button>
+        <AnimatePresence mode="wait">
+          {!showAuth ? (
+            <motion.div key="intro" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, y: -20 }} className="w-full flex flex-col items-center">
+              <div className="space-y-2 mb-12">
+                <h1 className="text-5xl font-bold text-on-surface">Total Privacy.</h1>
+                <h1 className="text-5xl font-bold text-on-surface-variant/60">Absolute Safety.</h1>
+                <p className="text-lg text-secondary mt-6">
+                  Enter the inner circle of global security. Elite protection, managed with clinical precision.
+                </p>
+              </div>
+
+              <div className="w-full space-y-4">
+                <button 
+                  onClick={() => { setIsLogin(false); setShowAuth(true); }}
+                  className="w-full py-4 bg-primary-container text-on-primary-container font-bold rounded-lg shadow-xl shadow-primary-container/20 active:scale-[0.98] transition-transform uppercase tracking-widest"
+                >
+                  Create Account
+                </button>
+                <button className="w-full py-4 border border-zinc-700 text-zinc-300 font-bold rounded-lg glass-panel hover:bg-white/5 transition-colors uppercase tracking-widest">
+                  Request Private Demo
+                </button>
+              </div>
+              
+              <button onClick={() => { setIsLogin(true); setShowAuth(true); }} className="mt-8 text-primary font-medium hover:underline uppercase tracking-widest text-sm">
+                Already a member? <span className="font-bold">Login</span>
+              </button>
+            </motion.div>
+          ) : (
+            <motion.div key="auth" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="w-full max-w-md glass-panel p-8 rounded-2xl border border-white/10">
+              <div className="flex justify-between items-center mb-8">
+                <h2 className="text-2xl font-black text-white uppercase tracking-widest">{isLogin ? 'Secure Login' : 'Register'}</h2>
+                <button onClick={() => setShowAuth(false)} className="text-zinc-500 hover:text-white transition-colors"><X size={24}/></button>
+              </div>
+              
+              <form onSubmit={handleAuth} className="space-y-4">
+                <div className="space-y-1 text-left">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Email Address</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+                    <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-surface/50 border border-white/10 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-primary transition-colors" placeholder="hq@cesproe.com" />
+                  </div>
+                </div>
+
+                <div className="space-y-1 text-left">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+                    <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-surface/50 border border-white/10 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-primary transition-colors" placeholder="••••••••" />
+                  </div>
+                </div>
+
+                {error && <div className="text-red-400 text-sm font-medium p-3 bg-red-950/50 rounded-lg border border-red-900/50">{error}</div>}
+
+                <button type="submit" disabled={loading} className="w-full py-4 bg-primary-container text-on-primary-container font-bold rounded-lg shadow-xl shadow-primary-container/20 active:scale-[0.98] transition-transform flex justify-center items-center gap-2 mt-4 uppercase tracking-widest">
+                  {loading ? <Loader2 className="animate-spin" size={20} /> : (isLogin ? 'Authenticate' : 'Initialize Account')}
+                </button>
+              </form>
+
+              <div className="mt-6 pt-6 border-t border-white/10">
+                <button onClick={() => setIsLogin(!isLogin)} className="text-sm text-zinc-400 hover:text-primary transition-colors">
+                  {isLogin ? "Need access? Request clearance." : "Already authorized? Authenticate."}
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </motion.main>
   );

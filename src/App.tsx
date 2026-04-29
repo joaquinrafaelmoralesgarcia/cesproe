@@ -6,49 +6,54 @@ import { TIERS, VEHICLES } from './constants';
 import AdminPortal from './AdminPortal';
 import { supabase } from './supabaseClient';
 import { Session } from '@supabase/supabase-js';
+import { n8nService } from './services/n8nService';
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('landing');
+  const [screen, setScreen] = useState<Screen>('dashboard');
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
+      // PILOT MODE: Always use a mock session and stay on dashboard
+      setSession({
+        user: { id: 'pilot-user', email: 'pilot@cesproe.com' },
+        access_token: 'pilot-token',
+      } as Session);
+      setScreen('dashboard');
       setLoading(false);
-      if (session && screen === 'landing') {
-        setScreen('dashboard');
-      }
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session && screen === 'landing') {
-        setScreen('dashboard');
-      } else if (!session) {
-        setScreen('landing');
-      }
+      setScreen('dashboard');
     });
 
     return () => subscription.unsubscribe();
   }, [screen]);
 
+  const handleConfirmMission = async () => {
+    // Notify n8n of new mission
+    n8nService.notifyMissionCreated({
+      userId: session?.user?.id,
+      email: session?.user?.email,
+      origin: "AV. REFORMA 450",
+      destination: "ZONE ZERO HQ",
+      cost: 420.00,
+      protocol: "Elite Escort"
+    });
+    setScreen('operations');
+  };
+
   const renderScreen = () => {
     if (loading) return <div className="min-h-screen bg-surface flex items-center justify-center"><Loader2 className="animate-spin text-primary" size={48} /></div>;
 
     switch (screen) {
-      case 'landing':
-        return <Landing onNext={() => setScreen('onboarding')} session={session} />;
-      case 'onboarding':
-        return <Onboarding onComplete={() => setScreen('tier-selection')} />;
-      case 'tier-selection':
-        return <TierSelection onSelect={() => setScreen('dashboard')} />;
       case 'dashboard':
         return <Dashboard onBooking={() => setScreen('booking')} onFleet={() => setScreen('fleet')} onOps={() => setScreen('operations')} />;
       case 'booking':
-        return <Booking onConfirm={() => setScreen('operations')} onBack={() => setScreen('dashboard')} />;
+        return <Booking onConfirm={handleConfirmMission} onBack={() => setScreen('dashboard')} />;
       case 'fleet':
         return <Fleet onBack={() => setScreen('dashboard')} />;
       case 'operations':
@@ -56,7 +61,7 @@ export default function App() {
       case 'admin':
         return <AdminPortal onBack={() => setScreen('dashboard')} />;
       default:
-        return <Landing onNext={() => setScreen('onboarding')} />;
+        return <Dashboard onBooking={() => setScreen('booking')} onFleet={() => setScreen('fleet')} onOps={() => setScreen('operations')} />;
     }
   };
 
@@ -141,11 +146,15 @@ function Landing({ onNext, session }: { onNext: () => void, session: Session | n
     setError(null);
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error, data } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        // Notify n8n of successful login
+        n8nService.sendEvent('user_login', { email, userId: data.user?.id });
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { error, data } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
+        // Notify n8n of new registration
+        n8nService.sendEvent('user_login', { email, userId: data.user?.id, isNewUser: true });
         alert("Registration successful! You are now logged in.");
       }
     } catch (err: any) {
@@ -190,10 +199,10 @@ function Landing({ onNext, session }: { onNext: () => void, session: Session | n
 
               <div className="w-full space-y-4">
                 <button 
-                  onClick={() => { setIsLogin(false); setShowAuth(true); }}
+                  onClick={onNext}
                   className="w-full py-4 bg-primary-container text-on-primary-container font-bold rounded-lg shadow-xl shadow-primary-container/20 active:scale-[0.98] transition-transform uppercase tracking-widest"
                 >
-                  Create Account
+                  Enter Platform (Pilot)
                 </button>
                 <button className="w-full py-4 border border-zinc-700 text-zinc-300 font-bold rounded-lg glass-panel hover:bg-white/5 transition-colors uppercase tracking-widest">
                   Request Private Demo
@@ -216,7 +225,7 @@ function Landing({ onNext, session }: { onNext: () => void, session: Session | n
                   <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Email Address</label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-                    <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-surface/50 border border-white/10 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-primary transition-colors" placeholder="hq@cesproe.com" />
+                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-surface/50 border border-white/10 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-primary transition-colors" placeholder="hq@cesproe.com" />
                   </div>
                 </div>
 
@@ -224,7 +233,7 @@ function Landing({ onNext, session }: { onNext: () => void, session: Session | n
                   <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Password</label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-                    <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-surface/50 border border-white/10 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-primary transition-colors" placeholder="••••••••" />
+                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-surface/50 border border-white/10 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-primary transition-colors" placeholder="••••••••" />
                   </div>
                 </div>
 
@@ -236,8 +245,8 @@ function Landing({ onNext, session }: { onNext: () => void, session: Session | n
               </form>
 
               <div className="mt-6 pt-6 border-t border-white/10">
-                <button onClick={() => setIsLogin(!isLogin)} className="text-sm text-zinc-400 hover:text-primary transition-colors">
-                  {isLogin ? "Need access? Request clearance." : "Already authorized? Authenticate."}
+                <button onClick={onNext} className="text-sm text-primary font-bold hover:underline uppercase tracking-widest">
+                  Skip for Pilot Phase →
                 </button>
               </div>
             </motion.div>

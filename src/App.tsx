@@ -11,27 +11,16 @@ import { n8nService } from './services/n8nService';
 export default function App() {
   const [screen, setScreen] = useState<Screen>('dashboard');
   const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      // PILOT MODE: Always use a mock session and stay on dashboard
-      setSession({
-        user: { id: 'pilot-user', email: 'pilot@cesproe.com' },
-        access_token: 'pilot-token',
-      } as Session);
-      setScreen('dashboard');
-      setLoading(false);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setScreen('dashboard');
-    });
-
-    return () => subscription.unsubscribe();
-  }, [screen]);
+    // PILOT MODE: Always use a mock session and stay on dashboard
+    setSession({
+      user: { id: 'pilot-user', email: 'pilot@cesproe.com' },
+      access_token: 'pilot-token',
+    } as Session);
+    setScreen('dashboard');
+  }, []);
 
   const handleConfirmMission = async () => {
     // Notify n8n of new mission
@@ -71,7 +60,7 @@ export default function App() {
         {renderScreen()}
       </AnimatePresence>
       
-      {screen !== 'landing' && screen !== 'onboarding' && screen !== 'tier-selection' && screen !== 'admin' && (
+      {screen !== 'admin' && (
         <Navbar currentScreen={screen} setScreen={setScreen} />
       )}
     </div>
@@ -130,15 +119,6 @@ function Navbar({ currentScreen, setScreen }: { currentScreen: Screen, setScreen
       ))}
     </nav>
   );
-}
-
-function Landing({ onNext, session }: { onNext: () => void, session: Session | null }) {
-  const [showAuth, setShowAuth] = useState(false);
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
